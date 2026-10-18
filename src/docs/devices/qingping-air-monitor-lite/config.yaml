@@ -1,0 +1,210 @@
+esphome:
+  name: qingping-air-monitor-lite
+
+esp32:
+  board: esp32dev
+  flash_size: 4MB
+  # No `partitions:`: cgdn1_boot supplies the stock partition table, which must not change.
+  framework:
+    type: esp-idf
+    advanced:
+      # The stock bootloader (kept) has no app rollback support.
+      enable_ota_rollback: false
+      # The factory-MAC eFuse fails its CRC on this product line; without this WiFi runs
+      # with an all-zero MAC.
+      ignore_efuse_mac_crc: true
+    sdkconfig_options:
+      CONFIG_ESPTOOLPY_FLASHMODE_DIO: "y"
+      CONFIG_ESPTOOLPY_FLASHFREQ_80M: "y"
+      CONFIG_ESPTOOLPY_FLASHSIZE_4MB: "y"
+      CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE: "n"
+      # NVS is shared with the stock firmware's settings (stock stays in the other OTA slot).
+      CONFIG_ESP_WIFI_NVS_ENABLED: "n"
+      CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE: "n"
+
+logger:
+
+wifi:
+  ap: {}
+
+external_components:
+  - source: github://nemethhh/esphome-qingping-cgdn1@v0.1.0
+    components: [cgdn1_boot, cgdn1_display, cgdn1_touch]
+
+# Required: holds the power latch (GPIO23, plus the sensor rails GPIO13/18) from the earliest
+# init, and owns the back-button power-off. Without it the unit switches itself off.
+cgdn1_boot:
+  id: boot
+  # true = every reboot returns to the firmware in the other OTA slot (stock, right after the
+  # install). See the install guide.
+  trial_mode: false
+
+i2c:
+  - id: bus_a  # sensors
+    sda: GPIO26
+    scl: GPIO27
+    frequency: 20kHz
+  - id: bus_b  # ATtiny814 touch slider
+    sda:
+      number: GPIO12
+      ignore_strapping_warning: true  # stock uses it the same way (open-drain I2C)
+    scl: GPIO14
+    frequency: 400kHz
+    timeout: 5ms
+    scan: false  # the ATtiny is only ever read, never address-probed
+
+spi:
+  interface: hardware
+  clk_pin:
+    number: GPIO5
+    ignore_strapping_warning: true
+  mosi_pin: GPIO4
+
+sensor:
+  - platform: scd4x
+    i2c_id: bus_a
+    address: 0x62
+    update_interval: 60s
+    co2:
+      id: co2
+      name: "CO2"
+  - platform: pmsa003i
+    i2c_id: bus_a
+    address: 0x12
+    update_interval: 60s
+    pm_1_0:
+      name: "PM1.0"
+    pm_2_5:
+      id: pm25
+      name: "PM2.5"
+    pm_10_0:
+      name: "PM10"
+  # Raw readings: the board heats the sensor by about 6 °C once warm. The full configuration
+  # (project-url) adds the stock self-heating compensation.
+  - platform: sht4x
+    i2c_id: bus_a
+    address: 0x44
+    update_interval: 10s
+    temperature:
+      id: temperature
+      name: "Temperature (raw)"
+    humidity:
+      id: humidity
+      name: "Humidity (raw)"
+  - platform: adc
+    pin: GPIO39
+    name: "Battery voltage"
+    attenuation: 12db
+    samples: 8
+    update_interval: 60s
+    filters:
+      - multiply: 2.0  # 1:2 divider
+  - platform: adc
+    pin: GPIO35
+    name: "Charge current"
+    attenuation: 2.5db
+    samples: 8
+    update_interval: 60s
+    unit_of_measurement: mA
+    filters:
+      - multiply: 500.0  # charger PROG pin: mA = mV / 2
+
+binary_sensor:
+  - platform: gpio
+    name: "Charging"
+    device_class: battery_charging
+    pin:
+      number: GPIO34
+      mode: INPUT
+      inverted: true
+  # Back button. Polled: ESP32 erratum 3.11 glitches GPIO36 while the ADC samples.
+  - platform: gpio
+    id: power_button
+    name: "Power button"
+    pin:
+      number: GPIO36
+      mode: INPUT
+      inverted: true
+    use_interrupt: false
+    filters:
+      - delayed_on_off: 30ms
+    on_click:
+      min_length: 30ms
+      max_length: 1s
+      then:
+        # Stock: a click toggles the display.
+        - lambda: |-
+            if (id(oled).is_on()) id(oled).turn_off(); else id(oled).turn_on();
+    on_press:
+      - script.execute: power_button_hold
+    on_release:
+      - script.stop: power_button_hold
+
+script:
+  # Stock: held 2 s powers off, while still held (on battery only; cgdn1_boot checks the guards).
+  - id: power_button_hold
+    mode: restart
+    then:
+      - delay: 2s
+      - if:
+          condition:
+            binary_sensor.is_on: power_button
+          then:
+            - lambda: id(boot).power_off_long_press();
+
+cgdn1_touch:
+  i2c_id: bus_b
+  data_ready_pin:
+    number: GPIO32
+    mode: INPUT_PULLUP
+    inverted: true
+  on_gesture:
+    # swipe_left, swipe_right, tap_left, tap_centre, tap_right, long_touch
+    - logger.log:
+        format: "touch: %s"
+        args: [gesture.c_str()]
+
+output:
+  - platform: ledc
+    id: led_r
+    pin: GPIO25
+    frequency: 5000Hz
+  - platform: ledc
+    id: led_g
+    pin: GPIO21
+    frequency: 5000Hz
+  - platform: ledc
+    id: led_b
+    pin: GPIO19
+    frequency: 5000Hz
+
+light:
+  - platform: rgb
+    name: "Status LED"
+    red: led_r
+    green: led_g
+    blue: led_b
+
+font:
+  - file: "gfonts://Roboto Condensed@700"
+    id: f_text
+    size: 20
+
+# 128 x 160 OLED, mounted rotated: 160 x 128 upright with rotation 90 (the default). The panel
+# variant is detected like stock. The full configuration re-creates the stock pages.
+display:
+  - platform: cgdn1_display
+    id: oled
+    cs_pin:
+      number: GPIO15
+      ignore_strapping_warning: true
+    dc_pin:
+      number: GPIO2
+      ignore_strapping_warning: true
+    reset_pin: GPIO22
+    update_interval: 5s
+    lambda: |-
+      it.printf(4, 4, id(f_text), "CO2 %.0f ppm", id(co2).state);
+      it.printf(4, 34, id(f_text), "PM2.5 %.0f", id(pm25).state);
+      it.printf(4, 64, id(f_text), "%.1f °C", id(temperature).state);
+      it.printf(4, 94, id(f_text), "%.0f %% RH", id(humidity).state);

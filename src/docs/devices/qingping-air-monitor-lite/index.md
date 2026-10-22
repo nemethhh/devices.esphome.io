@@ -26,17 +26,21 @@ The board-specific parts are external components from the
 - `cgdn1_display` drives the OLED and detects which of the two factory panel variants is fitted, like stock.
 - `cgdn1_touch` reads the ATtiny814 touch slider and decodes taps and swipes.
 
-The [full configuration](https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.1.0/cgdn1.yaml) in the project
-repository also re-creates the stock screen pages, the stock LED colours, night mode and the stock self-heating
-compensation for temperature and humidity. Without that compensation the SHT4x reads about 6 °C high once the board is
-warm.
+The [full configuration](https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.2.0/cgdn1.yaml) in the project
+repository also re-creates the stock screen pages, the stock LED colours and night mode, and adds a passive Bluetooth
+proxy and optional on-screen messages over MQTT. It compensates the board's self-heating of temperature and humidity,
+either like stock or with a measured display/Bluetooth heat model tuned from Home Assistant. Without compensation the
+SHT4x reads about 6 °C high once the board is warm.
 
 ## Installation
 
 The UART is only reachable inside the case, behind a glued-in screen, so ESPHome is installed over the air through the
 stock firmware. With the monitor connected to a local MQTT broker, the stock OTA can be told to download an image from
-your PC. The project's [install guide](https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.1.0/docs/install.md)
+your PC. The project's [install guide](https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.2.0/docs/install.md)
 covers the whole procedure, including a reversible trial mode that returns to stock on every reboot.
+
+There is no rollback: an image that fails to boot can only be recovered over the UART, which means removing the
+glued-in screen.
 
 Keep the stock partition table: `cgdn1_boot` supplies it, so don't set `partitions:`. Push only the app image
 (`firmware.ota.bin`), never `firmware.factory.bin`.
@@ -75,5 +79,5 @@ Hardware only: add `api:`, `ota:` and your WiFi settings as usual.
 
 ## Full Configuration
 
-```yaml url=https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.1.0/cgdn1.yaml
+```yaml url=https://github.com/nemethhh/esphome-qingping-cgdn1/blob/v0.2.0/cgdn1.yaml
 ```

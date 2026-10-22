@@ -28,7 +28,7 @@ wifi:
   ap: {}
 
 external_components:
-  - source: github://nemethhh/esphome-qingping-cgdn1@v0.1.0
+  - source: github://nemethhh/esphome-qingping-cgdn1@v0.2.0
     components: [cgdn1_boot, cgdn1_display, cgdn1_touch]
 
 # Required: holds the power latch (GPIO23, plus the sensor rails GPIO13/18) from the earliest

@@ -72,7 +72,7 @@ Keep the stock partition table: `cgdn1_boot` supplies it, so don't set `partitio
 
 ## Basic Configuration
 
-Hardware only: add `api:`, `ota:` and your WiFi settings as usual.
+Hardware only: add `api:`, `ota:`, `captive_portal:` and your WiFi settings as usual.
 
 ```yaml file=config.yaml
 ```
